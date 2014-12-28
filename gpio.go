@@ -13,14 +13,14 @@ type Direction int
 type EdgeTrigger int
 type Pull int
 
-// go:generate stringer -type=Direction
+//go:generate stringer -type=Direction
 // Pin direction
 const (
 	DirIn Direction = iota
 	DirOut
 )
 
-// go:generate stringer -type=EdgeTrigger
+//go:generate stringer -type=EdgeTrigger
 // Represents signal edge
 const (
 	EdgeNone EdgeTrigger = iota
@@ -29,7 +29,7 @@ const (
 	EdgeBoth
 )
 
-// go:generate stringer -type=Pull
+//go:generate stringer -type=Pull
 // Represents pull up/down resistor mode
 const (
 	PullOff Pull = iota
