@@ -1,4 +1,4 @@
-package bcm2835
+package bcm2708
 
 import (
 	"github.com/e-asphyx/gpio"
