@@ -10,7 +10,7 @@ import (
 )
 
 type Direction int
-type EdgeTrigger int
+type Trigger int
 type Pull int
 
 //go:generate stringer -type=Direction
@@ -20,10 +20,10 @@ const (
 	DirOut
 )
 
-//go:generate stringer -type=EdgeTrigger
+//go:generate stringer -type=Trigger
 // Represents signal edge
 const (
-	EdgeNone EdgeTrigger = iota
+	EdgeNone Trigger = iota
 	EdgeRising
 	EdgeFalling
 	EdgeBoth
@@ -48,13 +48,20 @@ type PinWriter interface {
 }
 
 // Readable pin with edge interrupt capabilities
-type PinReadEdger interface {
+type PinReadTrigger interface {
 	PinReader
-	Edge(edge EdgeTrigger) (Edge, error)
+	Trigger(edge Trigger) (PinTrigger, error)
+}
+
+// Readable/Writable pin
+type PinReadWriter interface {
+	PinReader
+	PinWriter
+	Direction() (Direction, error)
 }
 
 // Must be closed before making any subsequent Read and Write calls
-type Edge interface {
+type PinTrigger interface {
 	Ch() <-chan int
 	Close() error
 }
@@ -63,7 +70,7 @@ type Edge interface {
 
 var (
 	ErrInvalid = errors.New("Invalid pin")
-	ErrEdge    = errors.New("Edge detector active")
+	ErrTrigger = errors.New("Trigger active")
 )
 
 type Pin struct {
@@ -72,7 +79,7 @@ type Pin struct {
 	ch  chan int
 }
 
-type gpioEdge Pin //huh
+type gpioTrigger Pin //huh
 
 func openWriteCloseFile(filename, data string) error {
 	fd, err := os.OpenFile(filename, os.O_WRONLY, 0666)
@@ -118,7 +125,7 @@ func NewPin(num int) (pin *Pin, err error) {
 
 func (pin *Pin) Read() (int, error) {
 	if pin.ch != nil {
-		return 0, ErrEdge
+		return 0, ErrTrigger
 	}
 
 	val, err := pin.read()
@@ -151,7 +158,7 @@ func (pin *Pin) read() (int, error) {
 
 func (pin *Pin) Write(value int) error {
 	if pin.ch != nil {
-		return ErrEdge
+		return ErrTrigger
 	}
 
 	var buf [1]byte
@@ -169,7 +176,7 @@ func (pin *Pin) Write(value int) error {
 
 func (pin *Pin) Close() error {
 	if pin.ch != nil {
-		err := (*gpioEdge)(pin).Close()
+		err := (*gpioTrigger)(pin).Close()
 		if err != nil {
 			return err
 		}
@@ -208,7 +215,7 @@ func (pin *Pin) Direction() (Direction, error) {
 
 func (pin *Pin) SetDirection(dir Direction) error {
 	if pin.ch != nil {
-		return ErrEdge
+		return ErrTrigger
 	}
 
 	var dirStr string
@@ -222,7 +229,7 @@ func (pin *Pin) SetDirection(dir Direction) error {
 	return openWriteCloseFile(fmt.Sprintf("/sys/class/gpio/gpio%d/direction", pin.idx), dirStr)
 }
 
-func (pin *Pin) setEdge(edge EdgeTrigger) error {
+func (pin *Pin) setEdge(edge Trigger) error {
 	var edgeStr string
 
 	switch edge {
@@ -242,9 +249,9 @@ func (pin *Pin) setEdge(edge EdgeTrigger) error {
 	return openWriteCloseFile(fmt.Sprintf("/sys/class/gpio/gpio%d/edge", pin.idx), edgeStr)
 }
 
-func (pin *Pin) Edge(edge EdgeTrigger) (detector Edge, err error) {
+func (pin *Pin) Trigger(edge Trigger) (trigger PinTrigger, err error) {
 	if pin.ch != nil {
-		return (*gpioEdge)(pin), nil
+		return (*gpioTrigger)(pin), nil
 	}
 
 	err = pin.SetDirection(DirIn)
@@ -264,10 +271,10 @@ func (pin *Pin) Edge(edge EdgeTrigger) (detector Edge, err error) {
 		return nil, err
 	}
 
-	return (*gpioEdge)(pin), nil
+	return (*gpioTrigger)(pin), nil
 }
 
-func (pin *gpioEdge) Close() error {
+func (pin *gpioTrigger) Close() error {
 	if pin.ch == nil || pin.fd.Fd() == ^uintptr(0) {
 		return ErrInvalid
 	}
@@ -285,6 +292,6 @@ func (pin *gpioEdge) Close() error {
 	return (*Pin)(pin).setEdge(EdgeNone)
 }
 
-func (pin *gpioEdge) Ch() <-chan int {
+func (pin *gpioTrigger) Ch() <-chan int {
 	return pin.ch
 }

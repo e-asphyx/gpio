@@ -38,9 +38,9 @@ type bcm2835Driver struct {
 
 type Pin int
 
-type bcm2835Edge struct {
-	pin  *gpio.Pin
-	edge gpio.Edge
+type bcm2708Trigger struct {
+	pin     *gpio.Pin
+	trigger gpio.PinTrigger
 }
 
 var drv *bcm2835Driver
@@ -150,35 +150,35 @@ func (pin Pin) SetPullUpDown(pull gpio.Pull) {
 	drv.mutex.Unlock()
 }
 
-func (pin Pin) Edge(edge gpio.EdgeTrigger) (gpio.Edge, error) {
+func (pin Pin) Trigger(trigger gpio.Trigger) (gpio.PinTrigger, error) {
 	gpioPin, err := gpio.NewPin(int(pin))
 	if err != nil {
 		return nil, err
 	}
 
-	gpioEdge, err := gpioPin.Edge(edge)
+	gpioEdge, err := gpioPin.Trigger(trigger)
 	if err != nil {
 		return nil, err
 	}
 
-	detector := &bcm2835Edge{
-		pin:  gpioPin,
-		edge: gpioEdge,
+	tr := &bcm2708Trigger{
+		pin:     gpioPin,
+		trigger: gpioEdge,
 	}
 
-	return detector, nil
+	return tr, nil
 }
 
-func (edge *bcm2835Edge) Ch() <-chan int {
-	return edge.edge.Ch()
+func (trigger *bcm2708Trigger) Ch() <-chan int {
+	return trigger.trigger.Ch()
 }
 
-func (edge *bcm2835Edge) Close() error {
-	err := edge.edge.Close()
+func (trigger *bcm2708Trigger) Close() error {
+	err := trigger.trigger.Close()
 	if err != nil {
 		return err
 	}
-	return edge.pin.Close()
+	return trigger.pin.Close()
 }
 
 func init() {
