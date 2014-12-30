@@ -137,7 +137,10 @@ func (srv *epollServer) serve() {
 					log.Println(err)
 					return
 				}
-				pin.ch <- val
+
+				if len(pin.ch) != cap(pin.ch) {
+					pin.ch <- val
+				}
 			}
 		}
 	}

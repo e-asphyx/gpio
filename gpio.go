@@ -37,6 +37,8 @@ const (
 	PullUp
 )
 
+const DefaultDebounceInterval time.Duration = 5 * time.Millisecond
+
 // Readable pin
 type PinReader interface {
 	Read() (int, error)
@@ -51,6 +53,7 @@ type PinWriter interface {
 type PinReadTrigger interface {
 	PinReader
 	Trigger(edge Trigger) (PinTrigger, error)
+	TriggerWithDebounce(edge Trigger, interval time.Duration) (PinTrigger, error) //pin can provide hw debounce
 }
 
 // Readable/Writable pin
@@ -64,6 +67,7 @@ type PinReadWriter interface {
 type PinTrigger interface {
 	Ch() <-chan int
 	Close() error
+	Trigger() Trigger
 }
 
 /* ------------------------------------------------------------------------- */
@@ -74,12 +78,18 @@ var (
 )
 
 type Pin struct {
-	idx int
-	fd  *os.File
-	ch  chan int
+	idx     int
+	fd      *os.File
+	ch      chan int
+	trigger Trigger
 }
 
 type gpioTrigger Pin //huh
+
+type gpioDebounce struct {
+	src PinTrigger
+	ch  chan int
+}
 
 func openWriteCloseFile(filename, data string) error {
 	fd, err := os.OpenFile(filename, os.O_WRONLY, 0666)
@@ -264,6 +274,7 @@ func (pin *Pin) Trigger(edge Trigger) (trigger PinTrigger, err error) {
 		return nil, err
 	}
 
+	pin.trigger = edge
 	pin.ch = make(chan int, 64)
 
 	err = epollSrv.addPin(pin)
@@ -272,6 +283,10 @@ func (pin *Pin) Trigger(edge Trigger) (trigger PinTrigger, err error) {
 	}
 
 	return (*gpioTrigger)(pin), nil
+}
+
+func (pin *Pin) TriggerWithDebounce(edge Trigger, interval time.Duration) (PinTrigger, error) {
+	return NewDebounceWithInterval(pin, edge, interval)
 }
 
 func (pin *gpioTrigger) Close() error {
@@ -294,4 +309,88 @@ func (pin *gpioTrigger) Close() error {
 
 func (pin *gpioTrigger) Ch() <-chan int {
 	return pin.ch
+}
+
+func (pin *gpioTrigger) Trigger() Trigger {
+	return pin.trigger
+}
+
+func NewDebounceWithInterval(pin PinReadTrigger, trigger Trigger, interval time.Duration) (PinTrigger, error) {
+	if interval < 0 {
+		interval = DefaultDebounceInterval
+	}
+
+	value, err := pin.Read()
+	if err != nil {
+		return nil, err
+	}
+
+	tr, err := pin.Trigger(trigger)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(chan int)
+
+	go func() {
+		timer := time.NewTimer(interval)
+		var debounce bool = false
+
+		for {
+			select {
+			case <-timer.C:
+				debounce = false
+
+			case val, ok := <-tr.Ch():
+				if !ok {
+					close(out)
+					return
+				}
+
+				if (trigger == EdgeRising && val == 1) ||
+					(trigger == EdgeFalling && val == 0) ||
+					val != value {
+
+					value = val
+
+					if !debounce {
+						out <- val
+						debounce = true
+						timer.Reset(interval)
+					}
+				}
+			}
+		}
+	}()
+
+	d := &gpioDebounce{
+		src: tr,
+		ch:  out,
+	}
+
+	return d, nil
+}
+
+func NewDebounce(pin PinReadTrigger, trigger Trigger) (PinTrigger, error) {
+	return NewDebounceWithInterval(pin, trigger, DefaultDebounceInterval)
+}
+
+func (d *gpioDebounce) Close() error {
+	err := d.src.Close()
+	if err != nil {
+		return err
+	}
+
+	for range d.ch {
+	}
+
+	return nil
+}
+
+func (d *gpioDebounce) Ch() <-chan int {
+	return d.ch
+}
+
+func (d *gpioDebounce) Trigger() Trigger {
+	return d.src.Trigger()
 }

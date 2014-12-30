@@ -169,16 +169,25 @@ func (pin Pin) Trigger(trigger gpio.Trigger) (gpio.PinTrigger, error) {
 	return tr, nil
 }
 
-func (trigger *bcm2708Trigger) Ch() <-chan int {
-	return trigger.trigger.Ch()
+func (pin Pin) TriggerWithDebounce(edge gpio.Trigger, interval time.Duration) (gpio.PinTrigger, error) {
+	// use software debounce
+	return gpio.NewDebounceWithInterval(pin, edge, interval)
 }
 
-func (trigger *bcm2708Trigger) Close() error {
-	err := trigger.trigger.Close()
+func (tr *bcm2708Trigger) Ch() <-chan int {
+	return tr.trigger.Ch()
+}
+
+func (tr *bcm2708Trigger) Close() error {
+	err := tr.trigger.Close()
 	if err != nil {
 		return err
 	}
-	return trigger.pin.Close()
+	return tr.pin.Close()
+}
+
+func (tr *bcm2708Trigger) Trigger() gpio.Trigger {
+	return tr.trigger.Trigger()
 }
 
 func init() {
